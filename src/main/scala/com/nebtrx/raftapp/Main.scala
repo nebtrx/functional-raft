@@ -221,8 +221,8 @@ object Main extends IOApp {
 
   override def run(args: List[String]): IO[ExitCode] = {
     val clusterSize = 5
-    val lowerTimeoutBoundary = 350
-    val higherTimeoutBoundary = 500
+    val lowerTimeoutBoundary = 150
+    val higherTimeoutBoundary = 300
 
     implicit val unsafeLogger: SelfAwareStructuredLogger[IO] = Slf4jLogger.unsafeCreate[IO]
 
