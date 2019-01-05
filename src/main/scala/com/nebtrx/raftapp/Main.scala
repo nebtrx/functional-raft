@@ -28,28 +28,28 @@ object Main extends IOApp {
                      c: Concurrent[IO]): IO[(RaftState[IO, Message], A)] = {
 
         msg match {
-          case EntryAppended(term, _) =>
-            logRequestReceived(state)
-              .flatMap(s => handleEntryAppended(s, term, actor))
+          case AppendEntry(term, _) =>
+            trackRequestReceived(state)
+              .flatMap(s => handleAppendEntry(s, term, actor))
               .map(s => (s, ()))
 
-          case VoteRequested(term, candidate) =>
-            logRequestReceived(state)
-              .flatMap(s => handleVoteRequested(s, term, candidate, actor))
+          case Vote(term, candidate) =>
+            trackRequestReceived(state)
+              .flatMap(s => handleVote(s, term, candidate, actor))
               .map(s => (s, ()))
 
-          case HandleVoteResponse(_, grantedVote) =>
-            handleVoteReceived(state , grantedVote, actor)
+          case ProcessVoteResponse(_, grantedVote) =>
+            handleProcessVoteResponse(state , grantedVote, actor)
               .map(s => (s, ()))
 
-          case HandleAppendResponse(_, _) => IO.pure((state, ()))
+          case ProcessAppendResponse(_, _) => IO.pure((state, ()))
 
-          case ElectionStarted(startedOn) =>
-            handleElectionStarted(state, startedOn, actor)
+          case StartElection(startedOn) =>
+            handleStartElection(state, startedOn, actor)
               .map(s => (s, ()))
 
-          case ClusterSettingsUpdated(clusterSettings: RaftClusterSettings[_]) =>
-            handleClusterSettingsUpdated(state, clusterSettings.asInstanceOf[RaftClusterSettings[IO]], actor)
+          case UpdateClusterSettings(clusterSettings: RaftClusterSettings[_]) =>
+            handleUpdateClusterSettings(state, clusterSettings.asInstanceOf[RaftClusterSettings[IO]], actor)
               .map(s => (s, ()))
 
           case SendHeartbeat =>
@@ -60,29 +60,35 @@ object Main extends IOApp {
 
       // Handlers ***************************
 
-      private def handleEntryAppended[A](state: RaftState[IO, Message], term:Term, actor: Actor[IO, Message])
+      private def handleAppendEntry[A](state: RaftState[IO, Message], term:Term, actor: Actor[IO, Message])
                                         (implicit sender: Actor[IO, Message])
                                         : IO[RaftState[IO, Message]] = {
         for {
           _ <- logger.info(s"[${state.id}]: Heartbeat received. Current Term $term")
-          updatedState = state.updateTerm(term)
+          updatedState <-
+            if (term > state.term)
+              // TODO: sync log
+              state.updateTerm(term).resetHeartbeatTimerFiber(None)
+            else
+              IO.pure(state)
+
           finalState <- startOrResetElectionTimerFiber(updatedState, actor, immediately = true)
 
-          _ <- sendMessageAsync(sender, HandleAppendResponse(finalState.term, success = true))(actor)
+          _ <- sendMessageAsync(sender, ProcessAppendResponse(finalState.term, success = true))(actor)
         } yield finalState
       }
 
-      private def handleVoteRequested[A](state: RaftState[IO, Message], term: Term, candidate: MemberId, actor: Actor[IO, Message])
+      private def handleVote[A](state: RaftState[IO, Message], term: Term, candidate: MemberId, actor: Actor[IO, Message])
                                         (implicit sender: Actor[IO, Message])
-      : IO[RaftState[IO, Message]] = {
+                               : IO[RaftState[IO, Message]] = {
         for {
           voteResult <- processVoteRequest(state, term, candidate)
           (voteGranted, newState) = voteResult
-          _ <- sendMessageAsync(sender, HandleVoteResponse(newState.term, voteGranted))(actor)
+          _ <- sendMessageAsync(sender, ProcessVoteResponse(newState.term, voteGranted))(actor)
         } yield newState
       }
 
-      private def handleVoteReceived(state: RaftState[IO, Message], granted: Boolean, actor: Actor[IO, Message])
+      private def handleProcessVoteResponse(state: RaftState[IO, Message], granted: Boolean, actor: Actor[IO, Message])
                                     (implicit sender: Actor[IO, Message]): IO[RaftState[IO, Message]] = {
         for {
           resultTuple <- IO.pure({
@@ -95,23 +101,22 @@ object Main extends IOApp {
             } else
               (false, state)
           })
-          (becameLeader , resultingState) = resultTuple
-          _ <- logger.info(s"[${resultingState.id}]: Received vote $granted for term ${resultingState.term}.")
-          _ <- if (becameLeader) logger.info(s"[${resultingState.id}]: Became Leader in term ${resultingState.term}.")
+          (becameLeader, voteCastedState) = resultTuple
+          _ <- logger.info(s"[${voteCastedState.id}]: Received vote $granted for term ${voteCastedState.term}.")
+          _ <- if (becameLeader) logger.info(s"[${voteCastedState.id}]: Became Leader in term ${voteCastedState.term}.")
             else IO.unit
-          interval = state.raftSettings.heartbeatTimeout
-          _ <- timer.repeatAtFixedRate(interval, sendMessageAsync(actor, SendHeartbeat)).foreverM.void.start
-        } yield resultingState
+          finalState <- startHeartbeatTimerFiber(voteCastedState, actor)
+        } yield finalState
       }
 
-      private def handleElectionStarted(state: RaftState[IO, Message], startedOn: Long, actor: Actor[IO, Message])
+      private def handleStartElection(state: RaftState[IO, Message], startedOn: Long, actor: Actor[IO, Message])
                                        (implicit sender: Actor[IO, Message]):IO[RaftState[IO, Message]] = {
         if (isNotLeaderAndElectionStartedAfterLastRequest(state, startedOn)) {
           for {
             updatedState <- IO.pure(state.startNewElection)
             _ <- logger.info(s"[${updatedState.id}]: Starting election for term ${updatedState.term}.")
             _ <- updatedState.otherClusterMembers
-              .parTraverse(sendMessageAsync(_, VoteRequested(updatedState.term, updatedState.id))(actor))
+              .parTraverse(sendMessageAsync(_, Vote(updatedState.term, updatedState.id))(actor))
             finalState <- startOrResetElectionTimerFiber(updatedState, actor)
           } yield finalState
         } else {
@@ -119,7 +124,7 @@ object Main extends IOApp {
         }
       }
 
-      private def handleClusterSettingsUpdated(state: RaftState[IO, Message],
+      private def handleUpdateClusterSettings(state: RaftState[IO, Message],
                                                cs: RaftClusterSettings[IO],
                                                actor: Actor[IO, Message])
                                               (implicit sender: Actor[IO, Message]): IO[RaftState[IO, Message]] = {
@@ -133,7 +138,7 @@ object Main extends IOApp {
       private def handleSendHeartbeat(state: RaftState[IO, Message], actor: Actor[IO, Message]): IO[RaftState[IO, Message]] = {
         val entry = Entry(state.term, state.id)
         state.otherClusterMembers
-          .parTraverse(a => sendMessageAsync(a, EntryAppended(state.term, entry))(actor))
+          .parTraverse(a => sendMessageAsync(a, AppendEntry(state.term, entry))(actor))
           .map(_ => state)
       }
 
@@ -156,7 +161,7 @@ object Main extends IOApp {
         } yield ()
       }
 
-      private def logRequestReceived(st: RaftState[IO, Message]): IO[RaftState[IO, Message]] =
+      private def trackRequestReceived(st: RaftState[IO, Message]): IO[RaftState[IO, Message]] =
         for {
           timestamp <- timer.clock.realTime(MILLISECONDS)
           updatedState = st.logRequestReceived(timestamp)
@@ -170,10 +175,10 @@ object Main extends IOApp {
               (false, state)
             }
             else {
-              state.getOrRegisterGivenVote(candidate)
+              state.getOrRegisterGivenVote(candidate, term)
             }
           })
-          (voteGranted, updatedState) = tuple
+          (voteGranted, _) = tuple
           _ <- logger.info(s"[${state.id}]: Term $term vote request for $candidate was $voteGranted.")
         } yield tuple
 
@@ -185,7 +190,16 @@ object Main extends IOApp {
         val interval = state.raftSettings.electionTimeout
         for {
           fiber <- startElectionTimer(interval, actor, immediately)
-          finalState <- state.resetElectionTimeoutFiber(Some(fiber))
+          finalState <- state.resetElectionTimerFiber(Some(fiber))
+        } yield finalState
+      }
+
+      private def startHeartbeatTimerFiber(state: RaftState[IO, Message], actor: Actor[IO, Message])
+                                                (implicit sender: Actor[IO, Message])= {
+        val interval = state.raftSettings.heartbeatTimeout
+        for {
+          fiber <- startHeartbeatTimer(interval, actor)
+          finalState <- state.resetHeartbeatTimerFiber(Some(fiber))
         } yield finalState
       }
 
@@ -193,7 +207,15 @@ object Main extends IOApp {
                                     (implicit sender: Actor[IO, Message]): IO[Fiber[IO, Unit]] = {
         timer.repeatAtFixedRate(if (immediately) 0.milli else interval,
           interval,
-          sendMessageAsync(actor, t => ElectionStarted(t))
+          sendMessageAsync(actor, t => StartElection(t))
+        ).start
+      }
+
+      private def startHeartbeatTimer(interval: FiniteDuration, actor: Actor[IO, Message])
+                                     (implicit sender: Actor[IO, Message]): IO[Fiber[IO, Unit]] = {
+        timer.repeatAtFixedRate(
+          interval,
+          sendMessageAsync(actor, SendHeartbeat)
         ).start
       }
     }
@@ -201,8 +223,10 @@ object Main extends IOApp {
   def finalizer: StateFinalizer[IO, RaftState[IO, Message]] = new StateFinalizer[IO, RaftState[IO, Message]] {
     override def dispose(state: RaftState[IO, Message])(implicit c: Concurrent[IO]): IO[Unit] = {
       val cancelComputation = for {
-        cancelable <- OptionT.fromOption[IO](state.mElectionTimeoutFiber.map(_.cancel))
-        _ <- OptionT.liftF[IO, Unit](cancelable)
+        electionCancelable <- OptionT.fromOption[IO](state.mElectionTimerFiber.map(_.cancel))
+        heartbeatCancelable <- OptionT.fromOption[IO](state.mHeartbeatTimerFiber.map(_.cancel))
+        _ <- OptionT.liftF[IO, Unit](electionCancelable)
+        _ <- OptionT.liftF[IO, Unit](heartbeatCancelable)
       } yield ()
       cancelComputation.value *> IO.unit
     }
@@ -215,7 +239,7 @@ object Main extends IOApp {
     for {
       electionInterval <- RandomNumberGenerator.apply[IO].nextInt(lowerBoundary, higherBoundary)
       raftSettings = RaftSettings(electionInterval.milli, lowerBoundary.milli)
-      _ <- a ! ClusterSettingsUpdated(RaftClusterSettings(raftSettings, clusterMembers.filterNot(_ == a)))
+      _ <- a ! UpdateClusterSettings(RaftClusterSettings(raftSettings, clusterMembers.filterNot(_ == a)))
     } yield ()
   }
 
