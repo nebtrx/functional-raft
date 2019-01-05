@@ -1,5 +1,7 @@
 # functional raft
 
+[![Build Status](https://travis-ci.org/nebtrx/functional-raft.svg?branch=master)](https://travis-ci.org/nebtrx/functional-raft)
+
 This is an implementation of the [Raft Consensus Algorithm][raft-website].
 It relies on a [simplified functional actor system][functional-actors]
 (assembled by me with inspiration from a couple of places) built on top of 
