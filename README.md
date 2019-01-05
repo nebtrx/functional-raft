@@ -21,13 +21,13 @@ do some planning to ensure its completion in a, hopefully, close future.
 **Software Engineering:**
  - [x] Functional actors using concurrency primitives.
  - [x] Logging.
- - [ ] Add a code formatter tool. _([Scalafmt][scalafmt] FTW)_
- - [ ] Add CI integration. _([Travis][travis-ci] FTW)_
- - [ ] Testing. _(Damn it!: I was too excited about getting a MVP )_
+ - [ ] Add a code formatter tool. _([Scalafmt][scalafmt] FTW.)_
+ - [x] Add CI integration. _([Travis][travis-ci] FTW.)_
+ - [ ] Testing. _(Damn it!: I was too excited about getting a MVP.)_
  - [ ] Benchmarking against an implementation using akka actors. _(Because why not?)_
  
 **Knowledge sharing:** 
- - [ ] Write a blog post _(This is the hardest part. I'm super-lazy for writing)_
+ - [ ] Write a blog post. _(This is the hardest part. I'm super-lazy for writing.)_
 
 
 [raft-website]: https://raft.github.io/
