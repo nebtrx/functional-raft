@@ -5,20 +5,20 @@ It relies on a [simplified functional actor system][functional-actors]
 (assembled by me with inspiration from a couple of places) built on top of 
 [fs2 queues][fs2-queues] and [cats-effects][cats-effects].
 
-The purpose behind this was to **learn more/exercise my knowledge** about `cats-effects` 
-and concurrency while having fun. 
+The purpose behind this was to **learn more/exercise my knowledge** about 
+**cats-effects** and **concurrency** while having fun. 
 
-### Implementation Roadmap & Progress
+## Implementation Roadmap & Progress
 
-Since this is a toy project and I started working in the funnier segment lets
+Since this is a toy project and I started working in the funnier segment, let's
 do some planning to ensure its completion in a, hopefully, close future.
 
-Raft Consensus Algorithm:
+**Raft Consensus Algorithm:**
  - [x] Leader Election.  
  - [ ] Log replication.
  - [ ] Dynamic cluster members changes.                
  
-Software Engineering:
+**Software Engineering:**
  - [x] Functional actors using concurrency primitives.
  - [x] Logging.
  - [ ] Add a code formatter tool. _([Scalafmt][scalafmt] FTW)_
@@ -26,7 +26,7 @@ Software Engineering:
  - [ ] Testing. _(Damn it!: I was too excited about getting a MVP )_
  - [ ] Benchmarking against an implementation using akka actors. _(Because why not?)_
  
-Knowledge sharing: 
+**Knowledge sharing:** 
  - [ ] Write a blog post _(This is the hardest part. I'm super-lazy for writing)_
 
 
