@@ -3,7 +3,7 @@ package com.nebtrx.util
 import cats.Applicative
 
 trait RandomNumberGenerator[F[_]] {
-  def nextInt(low:Int, high: Int): F[Int]
+  def nextInt(low: Int, high: Int): F[Int]
 }
 
 object RandomNumberGenerator {

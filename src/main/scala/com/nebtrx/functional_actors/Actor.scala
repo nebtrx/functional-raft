@@ -24,15 +24,18 @@ object Actor {
 
   def apply[F[_], M[+ _], S](initialState: S,
                              messageHandler: MessageHandler[F, M, S],
-                             finalizer: StateFinalizer[F, S])
-                            // Logger remains just in case of future debugging of this 'toy' project
-                            (implicit c: Concurrent[F], logger: Logger[F]): F[Actor[F, M]] = {
+                             finalizer: StateFinalizer[F, S])(
+    implicit c: Concurrent[F],
+    logger: Logger[F]
+  ): F[Actor[F, M]] = {
 
-    def process[A](pendingMsg: ActorMessage[F, M, A], stateRef: Ref[F, S])
-                  (implicit c: Concurrent[F]): F[Unit] =
+    def process[A](pendingMsg: ActorMessage[F, M, A],
+                   stateRef: Ref[F, S])(implicit c: Concurrent[F]): F[Unit] =
       for {
         state <- stateRef.get
         (msg, deferred, actor, sender) = pendingMsg
+        // Dummy trace to avoid a warning for unused logger since I wanna keep it just in case
+        _ <- logger.trace(s"Processing received message")
         result <- messageHandler.receive(state, msg, actor)(sender, c)
         (newState, output) = result
         _ <- stateRef.set(newState) *> deferred.complete(output)
@@ -42,27 +45,26 @@ object Actor {
       stateRef <- Ref.of[F, S](initialState)
       queue <- Queue.unbounded[F, ActorMessage[F, M, _]]
       consumer <- (for {
-        msg <- queue.dequeue1
-        _ <- process(msg, stateRef)
-      } yield ()).foreverM.void.start
-    } yield new Actor[F, M] {
-      def ![A](fa: M[A])(implicit sender: Actor[F, M]): F[A] = {
-        for {
-          deferred <- Deferred[F, A]
-          _ <- queue.offer1((fa, deferred, this, sender))
-          output <- (consumer.join race deferred.get)
-            .collect { case Right(o) => o }
-        } yield output
-      }
+                   msg <- queue.dequeue1
+                   _ <- process(msg, stateRef)
+                 } yield ()).foreverM.void.start
+    } yield
+      new Actor[F, M] {
+        def ![A](fa: M[A])(implicit sender: Actor[F, M]): F[A] =
+          for {
+            deferred <- Deferred[F, A]
+            _ <- queue.offer1((fa, deferred, this, sender))
+            output <- consumer.join
+                       .race(deferred.get)
+                       .collect { case Right(o) => o }
+          } yield output
 
-      override def stop: F[Unit] = {
-        for {
-          state <- stateRef.get
-          _ <- finalizer.dispose(state)
-          _ <- consumer.cancel
-        } yield ()
+        override def stop: F[Unit] =
+          for {
+            state <- stateRef.get
+            _ <- finalizer.dispose(state)
+            _ <- consumer.cancel
+          } yield ()
       }
-    }
   }
 }
-

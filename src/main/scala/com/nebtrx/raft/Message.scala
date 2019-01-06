@@ -15,5 +15,3 @@ final case class StartElection(startedOn: Long) extends Message[Unit]
 final case class UpdateClusterSettings[F[_]](config: RaftClusterSettings[F]) extends Message[Unit]
 
 case object SendHeartbeat extends Message[Unit]
-
-

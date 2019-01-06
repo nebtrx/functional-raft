@@ -23,7 +23,7 @@ do some planning to ensure its completion in a, hopefully, close future.
 **Software Engineering:**
  - [x] Functional actors using concurrency primitives.
  - [x] Logging.
- - [ ] Add a code formatter tool. _([Scalafmt][scalafmt] FTW.)_
+ - [x] Add a code formatter tool. _([Scalafmt][scalafmt] FTW.)_
  - [x] Add CI integration. _([Travis][travis-ci] FTW.)_
  - [ ] Testing. _(Damn it!: I was too excited about getting a MVP.)_
  - [ ] Benchmarking against an implementation using akka actors. _(Because why not?)_
