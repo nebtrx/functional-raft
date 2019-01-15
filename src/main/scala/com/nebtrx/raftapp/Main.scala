@@ -13,8 +13,8 @@ import com.nebtrx.util.RandomNumberGenerator
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 import io.chrisdavenport.log4cats.{Logger, SelfAwareStructuredLogger}
 
-import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 import scala.concurrent.duration._
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 
 object Main extends IOApp {
 
@@ -49,10 +49,8 @@ object Main extends IOApp {
             handleStartElection(state, startedOn, actor)
               .map(s => (s, ()))
 
-          case UpdateClusterSettings(clusterSettings: RaftClusterSettings[_]) =>
-            handleUpdateClusterSettings(state,
-                                        clusterSettings.asInstanceOf[RaftClusterSettings[IO]],
-                                        actor)
+          case c: UpdateClusterSettings[IO] =>
+            handleUpdateClusterSettings(state, c.config, actor)
               .map(s => (s, ()))
 
           case SendHeartbeat =>
@@ -276,7 +274,7 @@ object Main extends IOApp {
     } yield ()
 
   override def run(args: List[String]): IO[ExitCode] = {
-    val clusterSize = 5
+    val clusterSize = 20
     val lowerTimeoutBoundary = 150
     val higherTimeoutBoundary = 300
 
